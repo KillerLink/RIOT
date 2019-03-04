@@ -60,6 +60,10 @@ void isr_rfcoreerr(void)
         DEBUG("%s(): NLOCK detected!\n", __FUNCTION__);
         RFCORE_FLUSH_RECEIVE_FIFO();
     }
+//PATCH
+#ifdef HOT_PATCH
+    cortexm_isr_end();
+#endif
 }
 
 void isr_rfcorerxtx(void)
@@ -74,16 +78,22 @@ void isr_rfcorerxtx(void)
 
 uint_fast8_t rfcore_read_byte(void)
 {
-    RFCORE_ASSERT(RFCORE_XREG_RXFIFOCNT > 0);
-    return RFCORE_SFR_RFDATA;
+//PATCH
+//	while (RFCORE_XREG_RXFIFOCNT <= 0);
+   	while(!(RFCORE->XREG_RXFIFOCNT > 0));
+    RFCORE_ASSERT(RFCORE->XREG_RXFIFOCNT > 0);
+    return RFCORE->SFR_RFDATA;
 }
 
 uint_fast8_t rfcore_peek_rx_fifo(int idx)
 {
     RFCORE_ASSERT(idx >= 0 && idx < CC2538_RF_FIFO_SIZE);
-    return *(uint_fast8_t *)(CC2538_RX_FIFO_ADDR + 4 * idx);
-}
+//    return *(uint_fast8_t *)(CC2538_RX_FIFO_ADDR + 4 * idx);
+//    return *(uint_fast8_t *)(CC2538_RX_FIFO_ADDR + 4*(( idx + RFCORE_XREG_RXFIRST)%128) );
+    return *(uint_fast8_t *)(CC2538_RX_FIFO_ADDR + 4*((idx+RFCORE->XREG_RXP1_PTR)%(128)) );
 
+}
+/*
 void rfcore_read_fifo(void *buf, uint_fast8_t len)
 {
     uint_fast8_t n;
@@ -94,6 +104,19 @@ void rfcore_read_fifo(void *buf, uint_fast8_t len)
         GET_BYTE(buf, n) = RFCORE_SFR_RFDATA;
     }
 }
+*/
+
+void rfcore_read_fifo(void *buf, uint_fast8_t len)
+{
+    uint_fast8_t n;
+// PATCH
+ while(!(RFCORE->XREG_RXFIFOCNT >= len));
+ RFCORE_ASSERT(len <= RFCORE->XREG_RXFIFOCNT);
+    for (n = 0; n < len; n++) {
+        GET_BYTE(buf, n) = RFCORE->SFR_RFDATA;
+    }
+}
+
 
 void rfcore_strobe(uint_fast8_t instr)
 {
@@ -109,7 +132,7 @@ void rfcore_write_byte(uint_fast8_t byte)
 void rfcore_poke_tx_fifo(int idx, uint_fast8_t byte)
 {
     RFCORE_ASSERT(idx >= 0 && idx < CC2538_RF_FIFO_SIZE);
-    *(uint_fast8_t *)(CC2538_TX_FIFO_ADDR + 4 * idx) = byte;
+    *(volatile uint_fast8_t *)(CC2538_TX_FIFO_ADDR + 4 * idx) = byte;
 }
 
 void rfcore_write_fifo(const void *buf, uint_fast8_t len)

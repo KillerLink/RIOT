@@ -289,13 +289,19 @@ static int _send(netdev_t *netdev, const iolist_t *iolist)
 
     /* Set first byte of TX FIFO to the packet length */
     rfcore_poke_tx_fifo(0, pkt_len + CC2538_AUTOCRC_LEN);
-
-    RFCORE_SFR_RFST = ISTXON;
+//volatile uint32_t x = 0; while (x<1000) { x++;}
+    RFCORE_SFR_RFST = ISTXONCCA;
 
     /* Wait for transmission to complete */
     RFCORE_WAIT_UNTIL(RFCORE->XREG_FSMSTAT1bits.TX_ACTIVE == 0);
 
     return pkt_len;
+}
+
+static void waste_it(uint8_t l) {
+	for (uint8_t i = 0; i< l; i++) {
+		(void) rfcore_read_byte();
+	}
 }
 
 static int _recv(netdev_t *netdev, void *buf, size_t len, void *info)
@@ -306,11 +312,12 @@ static int _recv(netdev_t *netdev, void *buf, size_t len, void *info)
 
     if (buf == NULL) {
         /* GNRC wants to know how much data we've got for it */
-        pkt_len = rfcore_read_byte();
-
+//        pkt_len = rfcore_read_byte();
+		pkt_len = rfcore_peek_rx_fifo(0);
         /* Make sure pkt_len is sane */
         if (pkt_len > CC2538_RF_MAX_DATA_LEN) {
             RFCORE_SFR_RFST = ISFLUSHRX;
+			DEBUG("pkt_len %d is insane\n", pkt_len);
             return -EOVERFLOW;
         }
 
@@ -318,14 +325,18 @@ static int _recv(netdev_t *netdev, void *buf, size_t len, void *info)
         if (!(rfcore_peek_rx_fifo(pkt_len) & 0x80)) {
             /* CRC failed; discard packet */
             RFCORE_SFR_RFST = ISFLUSHRX;
+			//waste_it(pkt_len+1);
+			DEBUG("crc failed\n");
             return -ENODATA;
         }
 
         if (len > 0) {
             /* GNRC wants us to drop the packet */
-            RFCORE_SFR_RFST = ISFLUSHRX;
+            //RFCORE_SFR_RFST = ISFLUSHRX;
+			waste_it(pkt_len+1);
         }
-
+waste_it(0);
+DEBUG("telling gnrc %d\n", pkt_len - IEEE802154_FCS_LEN);
         return pkt_len - IEEE802154_FCS_LEN;
     }
     else {
@@ -337,7 +348,15 @@ static int _recv(netdev_t *netdev, void *buf, size_t len, void *info)
     netdev->stats.rx_count++;
     netdev->stats.rx_bytes += pkt_len;
 #endif
-    rfcore_read_fifo(buf, pkt_len);
+
+uint8_t rl = rfcore_read_byte();
+DEBUG("receiving pkt_len %d vs rl %d\n", pkt_len, rl);
+if (rl>127) {
+	RFCORE_SFR_RFST = ISFLUSHRX;
+	return 0;
+}
+
+rfcore_read_fifo(buf, pkt_len);
 
     if (info != NULL && RFCORE->XREG_RSSISTATbits.RSSI_VALID) {
         uint8_t corr_val;
@@ -364,10 +383,12 @@ static int _recv(netdev_t *netdev, void *buf, size_t len, void *info)
          * to provide an LQI value */
         radio_info->lqi = 255 * (corr_val - CC2538_CORR_VAL_MIN) /
                           (CC2538_CORR_VAL_MAX - CC2538_CORR_VAL_MIN);
-    }
+    } else {
+        (void) rfcore_read_byte();
+        (void) rfcore_read_byte();
+	}
 
-    RFCORE_SFR_RFST = ISFLUSHRX;
-
+	DEBUG("handing gnrc %d\n", pkt_len);
     return pkt_len;
 }
 
