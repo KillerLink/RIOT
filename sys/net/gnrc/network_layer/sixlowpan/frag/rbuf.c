@@ -146,11 +146,14 @@ static int _rbuf_add(gnrc_netif_hdr_t *netif_hdr, gnrc_pktsnip_t *pkt,
             return RBUF_ADD_REPEAT;
         }
         /* End was already checked in overlap check */
+
+#if (HOT_PATCH != 0)
         if (ptr->start == offset) {
             DEBUG("6lo rbuf: fragment already in reassembly buffer");
             gnrc_pktbuf_release(pkt);
             return RBUF_ADD_SUCCESS;
         }
+#endif
         ptr = ptr->next;
     }
 

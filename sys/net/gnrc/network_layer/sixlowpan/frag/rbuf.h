@@ -30,7 +30,7 @@
 
 extern "C" {
 #endif
-
+//good for small buffers: 32U|1U*1000*10
 #define RBUF_SIZE           (4U)               /**< size of the reassembly buffer */
 #define RBUF_TIMEOUT        (3U * US_PER_SEC) /**< timeout for reassembly in microseconds */
 
